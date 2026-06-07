@@ -269,13 +269,20 @@ async function executeBinanceOrder(session, symbol, side, quantity) {
   return data;
 }
 
-// ─── Helper: WhatsApp Notifikasi (CallMeBot - gratis) ─────────
-async function notifyWA(number, message) {
-  if (!number || !process.env.WA_API_KEY) return;
+// ─── Helper: Telegram Notifikasi (CallMeBot - gratis) ─────────
+// Tidak butuh API key — cukup username Telegram
+async function notifyWA(username, message) {
+  // username = Telegram username (contoh: Restu_hidayat30)
+  if (!username) return;
   try {
-    var url = `https://api.callmebot.com/whatsapp.php?phone=${number}&text=${encodeURIComponent(message)}&apikey=${process.env.WA_API_KEY}`;
-    await fetch(url);
-  } catch(e) {}
+    // Hapus @ jika ada di depan
+    var user = username.replace(/^@/, "");
+    var url  = "https://api.callmebot.com/text.php?user=@" + user + "&text=" + encodeURIComponent(message);
+    var res  = await fetch(url);
+    console.log("[Notif Telegram]", user, res.status);
+  } catch(e) {
+    console.warn("[Notif error]", e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
