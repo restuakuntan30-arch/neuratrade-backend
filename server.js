@@ -302,11 +302,62 @@ app.post("/api/balance", async (req, res) => {
       const r = await fetch("https://api.binance.com/api/v3/account?"+p, { headers:{"X-MBX-APIKEY":apiKey} });
       const d = await r.json();
       if (d.code) return res.status(400).json({ error:"Binance: "+d.msg });
-      const bals = (d.balances||[]).filter(b=>parseFloat(b.free)>0||parseFloat(b.locked)>0)
-        .map(b=>({asset:b.asset,free:parseFloat(b.free),locked:parseFloat(b.locked)}))
-        .sort((a,b)=>b.free-a.free);
-      const usdt = bals.find(b=>b.asset==="USDT");
-      return res.json({ exchange:"binance", totalUsdt: Math.round((usdt?.free||0)*100)/100, balances:bals.slice(0,15), canTrade:d.canTrade });
+      // Semua aset dengan saldo > 0
+      const bals = (d.balances||[])
+        .filter(b => parseFloat(b.free) + parseFloat(b.locked) > 0.000001)
+        .map(b => ({
+          asset:  b.asset,
+          free:   parseFloat(b.free),
+          locked: parseFloat(b.locked),
+          total:  parseFloat(b.free) + parseFloat(b.locked),
+        }))
+        .sort((a,b) => b.total - a.total);
+
+      // Ambil harga BTC & ETH untuk konversi
+      var btcPrice = 0, ethPrice = 0;
+      try {
+        var [btcR, ethR] = await Promise.all([
+          fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"),
+          fetch("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT"),
+        ]);
+        btcPrice = parseFloat((await btcR.json()).price) || 0;
+        ethPrice = parseFloat((await ethR.json()).price) || 0;
+      } catch(e) {}
+
+      // Hitung total dalam USD
+      // Stablecoin 1:1 (termasuk LDUSDT = Locked/Simple Earn USDT)
+      const STABLES = ["USDT","USDC","BUSD","LDUSDT","FDUSD","TUSD","DAI","USDP"];
+      var totalUsdt = 0;
+      var breakdown = [];
+
+      for (var b of bals) {
+        var usdVal = 0;
+        if (STABLES.includes(b.asset)) {
+          usdVal = b.total;                    // 1:1 dengan USD
+        } else if (b.asset === "BTC" && btcPrice > 0) {
+          usdVal = b.total * btcPrice;
+        } else if (b.asset === "ETH" && ethPrice > 0) {
+          usdVal = b.total * ethPrice;
+        } else if (b.asset === "BNB" && btcPrice > 0) {
+          // BNB roughly estimated
+          usdVal = b.total * (btcPrice / 150);
+        }
+        if (usdVal > 0.01) {
+          totalUsdt += usdVal;
+          breakdown.push({ asset: b.asset, amount: b.total, usdValue: Math.round(usdVal * 100) / 100 });
+        }
+      }
+
+      return res.json({
+        exchange:  "binance",
+        totalUsdt: Math.round(totalUsdt * 100) / 100,
+        balances:  bals.slice(0, 20),
+        breakdown: breakdown,
+        btcPrice:  Math.round(btcPrice),
+        canTrade:  d.canTrade,
+        note: bals.some(b => b.asset === "LDUSDT") ?
+          "Termasuk LDUSDT (Simple Earn/Locked)" : null,
+      });
     }
     if (exchange === "bybit") {
       const ts = Date.now().toString(), rw = "5000", qs = "accountType=UNIFIED";
