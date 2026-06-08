@@ -348,6 +348,27 @@ app.post("/api/balance", async (req, res) => {
         }
       }
 
+      // Cek Futures wallet juga
+      var futuresUsdt = 0;
+      try {
+        var fts  = Date.now();
+        var fp   = new URLSearchParams({ timestamp: fts.toString() });
+        var fsig = crypto.createHmac("sha256", secretKey).update(fp.toString()).digest("hex");
+        fp.append("signature", fsig);
+        var fr = await fetch("https://fapi.binance.com/fapi/v2/balance?" + fp.toString(), {
+          headers: { "X-MBX-APIKEY": apiKey }
+        });
+        var fd = await fr.json();
+        if (Array.isArray(fd)) {
+          var fbal = fd.find(function(b){ return b.asset === "USDT"; });
+          futuresUsdt = parseFloat((fbal && fbal.balance) ? fbal.balance : 0);
+          if (futuresUsdt > 0.01) {
+            totalUsdt += futuresUsdt;
+            breakdown.push({ asset: "USDT(Futures)", amount: futuresUsdt, usdValue: Math.round(futuresUsdt*100)/100 });
+          }
+        }
+      } catch(fe) { /* Futures tidak aktif */ }
+
       return res.json({
         exchange:  "binance",
         totalUsdt: Math.round(totalUsdt * 100) / 100,
@@ -355,8 +376,8 @@ app.post("/api/balance", async (req, res) => {
         breakdown: breakdown,
         btcPrice:  Math.round(btcPrice),
         canTrade:  d.canTrade,
-        note: bals.some(b => b.asset === "LDUSDT") ?
-          "Termasuk LDUSDT (Simple Earn/Locked)" : null,
+        note: futuresUsdt > 0 ? "Termasuk Futures Wallet: $" + futuresUsdt.toFixed(2)
+            : bals.some(function(b){ return b.asset === "LDUSDT"; }) ? "Termasuk LDUSDT (Simple Earn)" : null,
       });
     }
     if (exchange === "bybit") {
