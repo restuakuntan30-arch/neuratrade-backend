@@ -265,7 +265,12 @@ async function executeBinanceOrder(session, symbol, side, quantity) {
   var res = await fetch("https://api.binance.com/api/v3/order?" + params.toString(),
     { method:"POST", headers:{"X-MBX-APIKEY": session.apiKey} });
   var data = await res.json();
-  if (data.code) throw new Error(data.msg);
+  if (!res.ok || data.code) {
+    var errMsg = data.msg || JSON.stringify(data);
+    // Log full error for debugging
+    console.error("Binance order error:", errMsg, "symbol:", symbol, "qty:", quantity, "side:", side);
+    throw new Error(errMsg);
+  }
   return data;
 }
 
